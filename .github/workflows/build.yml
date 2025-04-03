@@ -66,8 +66,11 @@ jobs:
           mkdir -p build
           cd build
           cmake \
+            -DCMAKE_POLICY_DEFAULT_CMP0048=NEW \
+            -DCMAKE_POLICY_DEFAULT_CMP0069=NEW \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.16 \
             -DSKIP_WEB_BUILD=ON \
-            -DBOARD=${{ matrix.board }} \
+            -DBOARD=${{ matrix.board_config }} \
             ..
       
       - name: Build Firmware

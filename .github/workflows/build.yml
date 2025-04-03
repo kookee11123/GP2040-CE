@@ -1,4 +1,4 @@
-name: Build GP2040-CE Firmware1
+name: Build GP2040-CE Firmware
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +36,6 @@ jobs:
         board: 
           - Haute42COSMOXMUltra
           - Pico
-          # 필요한 경우 추가 보드 설정 가능
     
     steps:
       - name: Checkout Repository
@@ -68,17 +67,22 @@ jobs:
             cmake \
             ninja
       
-      - name: Patch Pico SDK MbedTLS CMakeLists
-        run: |
-          MBEDTLS_CMAKE_PATH="${GITHUB_WORKSPACE}/pico-sdk/lib/mbedtls/CMakeLists.txt"
-          sed -i 's/cmake_minimum_required(VERSION 3\.[0-9]\+)/cmake_minimum_required(VERSION 3.16)/' "$MBEDTLS_CMAKE_PATH"
-      
       - name: Clone Pico SDK
         run: |
           git clone https://github.com/raspberrypi/pico-sdk.git
           cd pico-sdk
           git submodule update --init
           echo "PICO_SDK_PATH=$PWD" >> $GITHUB_ENV
+      
+      - name: Patch Pico SDK MbedTLS CMakeLists
+        run: |
+          MBEDTLS_CMAKE_PATH="${PICO_SDK_PATH}/lib/mbedtls/CMakeLists.txt"
+          if [ -f "$MBEDTLS_CMAKE_PATH" ]; then
+            sed -i 's/cmake_minimum_required(VERSION 3\.[0-9]\+)/cmake_minimum_required(VERSION 3.16)/' "$MBEDTLS_CMAKE_PATH"
+          else
+            echo "MbedTLS CMakeLists.txt not found"
+            exit 1
+          fi
       
       - name: Configure Build Environment
         run: |

@@ -1,45 +1,58 @@
-name: Build GP2040-CE Firmware
+name: GP2040-CE Firmware Build
 
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version Tag (optional)'
+      board_config:
+        description: 'Board Configuration'
+        required: false
+        default: 'Pico'
+      version_tag:
+        description: 'Custom Version Tag'
         required: false
         default: ''
+
   push:
     branches: 
       - main
       - develop
+    paths:
+      - 'src/**'
+      - 'lib/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/build.yml'
+
   pull_request:
     branches:
       - main
       - develop
+    paths:
+      - 'src/**'
+      - 'lib/**'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build Firmware
+    name: Build GP2040-CE Firmware
     runs-on: ubuntu-latest
-    
     strategy:
       matrix:
-        board: 
+        board_config:
+          - Pico
           - Haute42COSMOXMUltra
-          # 필요한 경우 추가 보드 설정 가능
-    
+          # 필요한 보드 설정 추가 가능
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: 'recursive'
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-      
-      - name: Install System Dependencies
+
+      - name: Install Dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -47,65 +60,83 @@ jobs:
             cmake \
             gcc-arm-none-eabi \
             build-essential \
+            python3 \
             python3-pip
-      
-      - name: Install Python Dependencies
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Requirements
         run: |
           python -m pip install --upgrade pip
-          pip install cmake
-      
+          pip install \
+            cmake \
+            ninja
+
+      - name: Cache Pico SDK
+        uses: actions/cache@v4
+        with:
+          path: pico-sdk
+          key: ${{ runner.os }}-pico-sdk-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pico-sdk-
+
       - name: Clone Pico SDK
         run: |
-          git clone https://github.com/raspberrypi/pico-sdk.git
-          cd pico-sdk
-          git submodule update --init
+          if [ ! -d "pico-sdk" ]; then
+            git clone https://github.com/raspberrypi/pico-sdk.git
+            cd pico-sdk
+            git submodule update --init
+          fi
           echo "PICO_SDK_PATH=$PWD" >> $GITHUB_ENV
-      
-      - name: Configure Build Environment
+
+      - name: Configure CMake
         run: |
           mkdir -p build
           cd build
           cmake \
-            -DSKIP_WEB_BUILD=ON \
-            -DBOARD=${{ matrix.board }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_DEFAULT_CMP0048=NEW \
+            -DCMAKE_POLICY_DEFAULT_CMP0069=NEW \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.16 \
+            -DSKIP_WEBBUILD=ON \
+            -DBOARD=${{ matrix.board_config }} \
             ..
-      
+
       - name: Build Firmware
         run: |
           cd build
           make -j$(nproc)
-      
+
       - name: Prepare Firmware Package
         run: |
-          mkdir -p firmware/${{ matrix.board }}
-          find build -name "*.uf2" -exec cp {} firmware/${{ matrix.board }}/ \;
-      
+          mkdir -p firmware/${{ matrix.board_config }}
+          find build -name "*.uf2" -exec cp {} firmware/${{ matrix.board_config }}/ \;
+
       - name: Verify Firmware Files
         run: |
-          if [ -z "$(ls -A firmware/${{ matrix.board }}/*.uf2)" ]; then
-            echo "No .uf2 files found for ${{ matrix.board }}"
+          if [ -z "$(ls -A firmware/${{ matrix.board_config }}/*.uf2)" ]; then
+            echo "No .uf2 files found for ${{ matrix.board_config }}"
             exit 1
           fi
-          ls -l firmware/${{ matrix.board }}/*.uf2
-      
+          ls -l firmware/${{ matrix.board_config }}/*.uf2
+
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: GP2040-CE_Firmware_${{ matrix.board }}
-          path: firmware/${{ matrix.board }}/*.uf2
+          name: GP2040-CE_${{ matrix.board_config }}_Firmware
+          path: firmware/${{ matrix.board_config }}/*.uf2
           retention-days: 30
-      
-      - name: Generate Release Tag
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
-        run: |
-          echo "RELEASE_TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
-      
+
       - name: Create GitHub Release
-        if: env.RELEASE_TAG != ''
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version_tag != ''
         with:
-          files: firmware/${{ matrix.board }}/*.uf2
-          tag_name: ${{ env.RELEASE_TAG }}
+          files: firmware/${{ matrix.board_config }}/*.uf2
+          tag_name: ${{ github.event.inputs.version_tag }}
           draft: false
           prerelease: false
         env:

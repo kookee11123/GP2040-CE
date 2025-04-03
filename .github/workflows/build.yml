@@ -1,0 +1,48 @@
+name: Build GP2040-CE Firmware1
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version Tag (optional)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+      
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git cmake gcc-arm-none-eabi build-essential python3
+      
+      - name: Clone Pico SDK
+        run: |
+          git clone https://github.com/raspberrypi/pico-sdk.git
+          cd pico-sdk
+          git submodule update --init
+          echo "PICO_SDK_PATH=$PWD" >> $GITHUB_ENV
+      
+      - name: Build Firmware
+        run: |
+          mkdir build
+          cd build
+          cmake -DSKIP_WEB_BUILD=ON -DBOARD=Haute42COSMOXMUltra ..
+          make -j4
+      
+      - name: Package Firmware
+        run: |
+          mkdir -p firmware
+          cp build/*.uf2 firmware/ || true
+      
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v3
+        with:
+          name: GP2040-CE_Firmware
+          path: firmware/*.uf2

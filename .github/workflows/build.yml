@@ -1,5 +1,4 @@
-name: Build GP2040-CE Firmware
-
+name: Build GP2040-CE Firmware1
 on:
   workflow_dispatch:
     inputs:
@@ -11,10 +10,21 @@ on:
     branches: 
       - main
       - develop
+    paths:
+      - 'src/**'
+      - 'lib/**'
+      - 'CMakeLists.txt'
   pull_request:
     branches:
       - main
       - develop
+    paths:
+      - 'src/**'
+      - 'lib/**'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -25,6 +35,7 @@ jobs:
       matrix:
         board: 
           - Haute42COSMOXMUltra
+          - Pico
           # 필요한 경우 추가 보드 설정 가능
     
     steps:
@@ -35,9 +46,10 @@ jobs:
           submodules: 'recursive'
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
+          cache: 'pip'
       
       - name: Install System Dependencies
         run: |
@@ -52,7 +64,14 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install cmake
+          pip install \
+            cmake \
+            ninja
+      
+      - name: Patch Pico SDK MbedTLS CMakeLists
+        run: |
+          MBEDTLS_CMAKE_PATH="${GITHUB_WORKSPACE}/pico-sdk/lib/mbedtls/CMakeLists.txt"
+          sed -i 's/cmake_minimum_required(VERSION 3\.[0-9]\+)/cmake_minimum_required(VERSION 3.16)/' "$MBEDTLS_CMAKE_PATH"
       
       - name: Clone Pico SDK
         run: |
@@ -66,11 +85,12 @@ jobs:
           mkdir -p build
           cd build
           cmake \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_DEFAULT_CMP0048=NEW \
             -DCMAKE_POLICY_DEFAULT_CMP0069=NEW \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.16 \
-            -DSKIP_WEB_BUILD=ON \
-            -DBOARD=${{ matrix.board_config }} \
+            -DSKIP_WEBBUILD=ON \
+            -DBOARD=${{ matrix.board }} \
             ..
       
       - name: Build Firmware
@@ -105,7 +125,7 @@ jobs:
       
       - name: Create GitHub Release
         if: env.RELEASE_TAG != ''
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: firmware/${{ matrix.board }}/*.uf2
           tag_name: ${{ env.RELEASE_TAG }}
